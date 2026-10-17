@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#050b14">
+<title>JARVIS Voice Assistant</title>
+<style>
+:root{--cyan:#72e7ff;--line:#28536b}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;padding:20px 16px;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 18%,#123755 0,#07121f 49%,#02060b);color:#e7f8ff;font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif}
+main{width:100%;max-width:500px;text-align:center}
+.eyebrow{font-size:10px;letter-spacing:4px;color:var(--cyan)}
+h1{font-size:clamp(34px,9vw,44px);font-weight:500;letter-spacing:8px;margin:12px 0 4px}
+.sub{font-size:11px;letter-spacing:2px;color:#8caabd}
+.visual{height:225px;display:grid;place-items:center;position:relative}
+.ring{position:absolute;width:185px;height:185px;border:1px solid #72e7ff35;border-radius:50%}
+.ring2{position:absolute;width:215px;height:215px;border:1px solid #188dff3b;border-radius:50%}
+.ring3{position:absolute;width:155px;height:155px;border:1px dashed #72e7ff75;border-radius:50%;animation:spin 20s linear infinite}
+.orb{width:90px;height:90px;border-radius:50%;background:radial-gradient(circle at 32% 25%,#fff,#a5f2ff 14%,#188dff 43%,#06295b 78%);box-shadow:0 0 35px #188dff80}
+.active .orb{animation:pulse .8s ease-in-out infinite alternate}
+.active .ring3{animation-duration:4s}
+@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{to{transform:scale(1.13);box-shadow:0 0 65px #188dff}}
+#status{font-size:12px;letter-spacing:1.5px;color:var(--cyan);min-height:20px}
+.panel{margin:18px 0;padding:18px;border:1px solid var(--line);border-radius:15px;background:#0a1a29dc;text-align:left}
+.label{font-size:10px;letter-spacing:2px;color:var(--cyan)}
+#reply{margin-top:9px;line-height:1.65;overflow-wrap:anywhere}
+button{min-width:200px;border:1px solid #54d9f6;border-radius:12px;background:linear-gradient(180deg,#124563,#09263a);color:#eafaff;padding:15px 24px;font-size:13px;font-weight:750;letter-spacing:1px;cursor:pointer;touch-action:manipulation}
+button.muted{background:#101c29;border-color:#506577;color:#c6d5df}
+.note{font-size:11px;line-height:1.65;color:#819daf;margin:18px 5px 0}
+</style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">PERSONAL ASSISTANT SYSTEM</div>
+  <h1>J.A.R.V.I.S.</h1>
+  <div class="sub">VOICE ASSISTANT</div>
+  <div class="visual" id="visual"><div class="ring2"></div><div class="ring"></div><div class="ring3"></div><div class="orb"></div></div>
+  <div id="status" role="status">VOICE OFF</div>
+  <section class="panel"><div class="label">JARVIS</div><div id="reply" aria-live="polite">Tap UNMUTE to hear a voice test. Then say “Jarvis, what time is it?”</div></section>
+  <button id="toggle" class="muted" type="button">🔇 UNMUTE</button>
+  <div class="note">Voice mode works while this page stays open. Speech recognition depends on browser support and microphone permission. This is the voice interface; the advanced AI brain is not connected yet.</div>
+</main>
+<script>
+(() => {
+  const status = document.getElementById('status');
+  const reply = document.getElementById('reply');
+  const visual = document.getElementById('visual');
+  const toggle = document.getElementById('toggle');
+  const SpeechAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let enabled = false, recognition = null, speaking = false, restartTimer = null, session = 0;
+
+  function voiceChoice() {
+    const voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+    const en = voices.filter(v => /^en(-|_)/i.test(v.lang));
+    return en.find(v => /david|mark|daniel|george|guy|alex|aaron|fred/i.test(v.name))
+      || en.find(v => /en-IN/i.test(v.lang))
+      || en.find(v => /en-US/i.test(v.lang)) || en[0] || voices[0] || null;
+  }
+
+  function say(text, resume = true) {
+    reply.textContent = text;
+    if (!('speechSynthesis' in window)) {
+      status.textContent = 'SPEECH OUTPUT UNAVAILABLE';
+      reply.textContent = text + ' Speech output is unavailable in this browser.';
+      return;
+    }
+    clearTimeout(restartTimer);
+    if (recognition) { try { recognition.stop(); } catch (_) {} }
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const v = voiceChoice();
+    if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-IN';
+    u.rate = 0.94; u.pitch = 0.82; u.volume = 1;
+    speaking = true;
+    visual.classList.remove('active');
+    status.textContent = 'JARVIS SPEAKING';
+    const thisSession = session;
+    u.onend = () => {
+      speaking = false;
+      if (enabled && resume && thisSession === session) startRecognition();
+      else if (enabled) status.textContent = 'VOICE ON';
+    };
+    u.onerror = e => {
+      speaking = false;
+      status.textContent = 'SPEECH ERROR: ' + (e.error || 'UNKNOWN');
+      if (enabled && resume) startRecognition();
+    };
+    speechSynthesis.speak(u);
+  }
+
+  function answer(command) {
+    const q = command.toLowerCase();
+    let text;
+    if (/\b(hello|hi|hey)\b/.test(q)) text = 'Hello. I am online and ready. How may I assist you?';
+    else if (q.includes('time')) text = 'The time is ' + new Date().toLocaleTimeString('en-IN',{hour:'numeric',minute:'2-digit'});
+    else if (q.includes('date') || q.includes('today')) text = 'Today is ' + new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    else if (q.includes('who are you') || q.includes('your name')) text = 'I am JARVIS, your personal assistant. My advanced AI brain is not connected yet.';
+    else if (q.includes('how are you')) text = 'All available systems are operational. I am standing by.';
+    else if (q.includes('help') || q.includes('what can you do')) text = 'I can greet you and tell you the time or date. Connecting the advanced AI brain is the next step.';
+    else if (q.includes('mute') || q.includes('stop listening')) { setEnabled(false); reply.textContent = 'Voice mode muted.'; return; }
+    else text = 'I heard you. My advanced AI brain is not connected yet, so I cannot answer that fully.';
+    say(text);
+  }
+
+  function startRecognition() {
+    if (!enabled || speaking) return;
+    if (!SpeechAPI) {
+      status.textContent = 'VOICE RECOGNITION UNSUPPORTED';
+      reply.textContent = 'This browser can speak, but it does not support speech recognition. Try current Chrome on Android.';
+      return;
+    }
+    if (!recognition) {
+      recognition = new SpeechAPI();
+      recognition.lang = 'en-IN'; recognition.continuous = true; recognition.interimResults = false;
+      recognition.onstart = () => {
+        if (enabled && !speaking) { visual.classList.add('active'); status.textContent = 'LISTENING FOR “JARVIS”'; }
+      };
+      recognition.onresult = e => {
+        if (!enabled || speaking) return;
+        for (let i=e.resultIndex;i<e.results.length;i++) {
+          if (!e.results[i].isFinal) continue;
+          const heard = e.results[i][0].transcript.trim();
+          const m = heard.match(/\bjarvis\b[\s,:-]*(.*)$/i);
+          if (!m) continue;
+          const command = m[1].trim();
+          if (!command) say('Yes. I am listening.');
+          else answer(command);
+        }
+      };
+      recognition.onerror = e => {
+        visual.classList.remove('active');
+        if (!enabled) return;
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+          status.textContent = 'MICROPHONE BLOCKED';
+          reply.textContent = 'The browser blocked microphone access. Check site permissions for this website and allow the microphone.';
+          setEnabled(false);
+        } else status.textContent = 'VOICE INPUT: ' + e.error.toUpperCase();
+      };
+      recognition.onend = () => {
+        visual.classList.remove('active');
+        if (enabled && !speaking) { clearTimeout(restartTimer); restartTimer=setTimeout(startRecognition,800); }
+      };
+    }
+    try { recognition.start(); }
+    catch (_) { clearTimeout(restartTimer); restartTimer=setTimeout(()=>{if(enabled&&!speaking){try{recognition.start()}catch(__){status.textContent='TAP MUTE, THEN UNMUTE TO RETRY';}}},900); }
+  }
+
+  function setEnabled(value) {
+    enabled = value; session++;
+    toggle.textContent = enabled ? '🔊 MUTE' : '🔇 UNMUTE';
+    toggle.classList.toggle('muted', !enabled);
+    if (!enabled) {
+      clearTimeout(restartTimer);
+      if (recognition) { try { recognition.stop(); } catch (_) {} }
+      if ('speechSynthesis' in window) speechSynthesis.cancel();
+      speaking = false; visual.classList.remove('active');
+      status.textContent = 'VOICE OFF';
+    }
+  }
+
+  toggle.addEventListener('click', () => {
+    if (enabled) { setEnabled(false); return; }
+    setEnabled(true);
+    // A spoken confirmation is triggered directly by the tap (user gesture).
+    say('JARVIS online. Voice system activated. I am listening.');
+    if (!SpeechAPI) status.textContent = 'SPEECH TEST · VOICE INPUT UNSUPPORTED';
+  });
+  status.textContent = 'VOICE OFF';
+})();
+</script>
+</body>
+</html>
